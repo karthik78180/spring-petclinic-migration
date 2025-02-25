@@ -3,3 +3,9 @@
  */
 
 rootProject.name = 'spring-petclinic'
+
+ext {
+    mysqlConnectorVersion = '8.0.26'
+    jackson = '2.3.3'
+    spring = '2.1.18.RELEASE'
+}

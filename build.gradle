@@ -13,13 +13,14 @@ rewrite {
     // Will configure in subsequent steps
     activeRecipe(
             'org.openrewrite.java.OrderImports',
+            'com.yourorg.VetToVeterinary'
     )
 }
 
 dependencies {
-    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:2.3.3'
+    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:${jackson}'
     implementation 'jakarta.inject:jakarta.inject-api:1.0.3'
-    implementation platform('org.springframework.boot:spring-boot-starter-parent:2.1.18.RELEASE')
+    implementation platform('org.springframework.boot:spring-boot-starter-parent:${spring}')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

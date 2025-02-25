@@ -1,0 +1,221 @@
+Here’s a step-by-step guide to publishing your OpenRewrite recipe to a local Maven repository and using it in another repository. This guide also covers handling all dependency configurations (e.g., implementation, runtimeOnly, api, etc.) and edge cases.
+
+Step 1: Create the Recipe Project
+Create a new Gradle project for your custom OpenRewrite recipe:
+
+bash
+Copy
+mkdir rewrite-recipe
+cd rewrite-recipe
+gradle init --type java-library
+Add OpenRewrite dependencies to build.gradle:
+
+groovy
+Copy
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.example.rewrite'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.openrewrite:rewrite-groovy:latest.release'
+    implementation 'org.openrewrite:rewrite-java:latest.release'
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            url = "${project.buildDir}/repo" // Publish to local Maven repository
+        }
+    }
+}
+Add your custom recipe code:
+
+Create a Java class for your recipe (e.g., UpdateDependencyVersion.java) in src/main/java/com/example/rewrite/.
+
+Step 2: Publish to Local Maven Repository
+Publish the recipe to your local Maven repository:
+
+bash
+Copy
+./gradlew publish
+This will publish the recipe to the build/repo directory in your project.
+
+Verify the publication:
+
+Check the build/repo directory to ensure the artifact (JAR) and POM files are generated.
+
+Step 3: Use the Recipe in Another Repository
+Add the local Maven repository to the target repository’s settings.gradle:
+
+groovy
+Copy
+dependencyResolutionManagement {
+    repositories {
+        maven {
+            url = uri('/path/to/rewrite-recipe/build/repo') // Path to your local Maven repo
+        }
+        mavenCentral()
+    }
+}
+Add the OpenRewrite plugin and recipe dependency to the target repository’s build.gradle:
+
+groovy
+Copy
+plugins {
+    id 'org.openrewrite.rewrite' version 'latest.release'
+}
+
+dependencies {
+    rewrite 'com.example.rewrite:rewrite-recipe:1.0.0'
+}
+Configure the recipe in the rewrite.yml file:
+
+yaml
+Copy
+type: specs.openrewrite.org/v1beta/recipe
+name: com.example.rewrite.UpdateDependencyVersion
+displayName: Update Dependency Version
+recipeList:
+  - com.example.rewrite.UpdateDependencyVersion:
+      dependencyGroupArtifact: "mysql:mysql-connector-java"
+      newVersion: "8.0.28"
+Run the recipe:
+
+bash
+Copy
+./gradlew rewriteRun
+Step 4: Handle All Dependency Configurations
+To handle all dependency configurations (e.g., implementation, runtimeOnly, api, etc.), modify the recipe to scan for all dependency declarations.
+
+Updated Recipe Code:
+java
+Copy
+import org.openrewrite.ExecutionContext;
+import org.openrewrite.Recipe;
+import org.openrewrite.TreeVisitor;
+import org.openrewrite.groovy.GroovyIsoVisitor;
+import org.openrewrite.groovy.tree.G;
+import org.openrewrite.java.tree.Expression;
+
+public class UpdateDependencyVersion extends Recipe {
+    private final String dependencyGroupArtifact;
+    private final String newVersion;
+
+    public UpdateDependencyVersion(String dependencyGroupArtifact, String newVersion) {
+        this.dependencyGroupArtifact = dependencyGroupArtifact;
+        this.newVersion = newVersion;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return "Update Dependency Version Dynamically";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Dynamically updates the version of a dependency in settings.gradle based on the placeholder in build.gradle.";
+    }
+
+    @Override
+    protected TreeVisitor<?, ExecutionContext> getVisitor() {
+        return new GroovyIsoVisitor<ExecutionContext>() {
+            private String versionKey;
+
+            @Override
+            public G.CompilationUnit visitCompilationUnit(G.CompilationUnit cu, ExecutionContext ctx) {
+                // First, find the version key in build.gradle
+                if (cu.getSourcePath().toString().endsWith("build.gradle")) {
+                    cu.getStatements().forEach(statement -> {
+                        if (statement instanceof G.MethodCall) {
+                            G.MethodCall methodCall = (G.MethodCall) statement;
+                            String methodName = methodCall.getSimpleName();
+                            // Check for all dependency configurations
+                            if (methodName.equals("implementation") || methodName.equals("runtimeOnly") ||
+                                methodName.equals("api") || methodName.equals("compileOnly") ||
+                                methodName.equals("testImplementation")) {
+                                String dependency = methodCall.getArguments().get(0).toString();
+                                if (dependency.startsWith(dependencyGroupArtifact)) {
+                                    // Extract the placeholder (e.g., xxxx)
+                                    String placeholder = dependency.substring(dependency.lastIndexOf(":") + 1);
+                                    versionKey = placeholder.replaceAll("[{}\"]", ""); // Remove {, }, and "
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Then, update the version in settings.gradle
+                if (cu.getSourcePath().toString().endsWith("settings.gradle")) {
+                    if (versionKey != null) {
+                        cu.getStatements().forEach(statement -> {
+                            if (statement instanceof G.Assignment) {
+                                G.Assignment assignment = (G.Assignment) statement;
+                                if (assignment.getVariable().toString().equals(versionKey)) {
+                                    // Update the version value
+                                    assignment = assignment.withValue(G.Literal.string(newVersion));
+                                    cu = cu.withStatements(cu.getStatements().map(s -> s == statement ? assignment : s));
+                                }
+                            }
+                        });
+                    }
+                }
+
+                return super.visitCompilationUnit(cu, ctx);
+            }
+        };
+    }
+}
+Step 5: Handle Edge Cases
+Multiple Dependency Declarations:
+
+If the same dependency is declared in multiple configurations (e.g., implementation and runtimeOnly), ensure the recipe updates the version variable only once.
+
+Missing Version Variable:
+
+If the version variable is not found in settings.gradle, log a warning or error.
+
+Invalid Placeholder Format:
+
+If the placeholder format is invalid (e.g., mysql:mysql-connector-java:${invalidKey}), skip the update.
+
+Non-String Version Values:
+
+If the version variable in settings.gradle is not a string (e.g., a number or variable reference), handle it appropriately.
+
+Summary of Steps
+Create the Recipe Project:
+
+Add OpenRewrite dependencies and write the recipe.
+
+Publish to Local Maven:
+
+Use ./gradlew publish to publish the recipe to a local Maven repository.
+
+Use the Recipe in Another Repository:
+
+Add the local Maven repository and recipe dependency.
+
+Configure the recipe in rewrite.yml.
+
+Handle All Dependency Configurations:
+
+Update the recipe to scan for all dependency declarations.
+
+Handle Edge Cases:
+
+Add logic to handle edge cases like missing variables or invalid placeholders.
+
+By following these steps, you can create a reusable, dynamic OpenRewrite recipe and apply it across multiple repositories.
