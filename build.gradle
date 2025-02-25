@@ -1,11 +1,19 @@
 plugins {
     id 'java'
     id 'maven-publish'
+    id 'org.openrewrite.rewrite' version '7.1.5'
 }
 
 repositories {
     mavenLocal()
     mavenCentral()
+}
+
+rewrite {
+    // Will configure in subsequent steps
+    activeRecipe(
+            'org.openrewrite.java.OrderImports',
+    )
 }
 
 dependencies {
